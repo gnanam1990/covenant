@@ -1,22 +1,66 @@
-# Covenant
+## Foundry
 
-**The universal conditional-release primitive. Built on Arc.**
+**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-A single configurable conditional-release engine. One covenant can express simple escrow, parametric triggers, multi-attestor tranche release, or tiered-outcome payment — through configuration alone, not new contracts. Per PRD §2, this is the meta-primitive that generalizes CareRail/TrustRail/TrueCarbon/Parametrix/Ladder.
+Foundry consists of:
 
-Status: early build · Arc testnet · **unaudited — process-level enforcement, not attestation truth.**
+- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
+- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
+- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
+- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
 
-Docs: [`docs/PRD.md`](docs/PRD.md) · Build prompts: [`PROMPT.md`](PROMPT.md) · Testnet addresses: [`docs/addresses.md`](docs/addresses.md)
+## Documentation
 
-## Quickstart
+https://book.getfoundry.sh/
 
-```bash
-forge test               # invariant tests incl. generality fuzz
-npm install && npm test  # off-chain unit tests
+## Usage
+
+### Build
+
+```shell
+$ forge build
 ```
 
-## Honesty rules
+### Test
 
-- v1 covenant enforces the *process* around attestations, not the truth of the attestation.
-- Unaudited testnet software — do not use with real funds.
-- The contract is immutable (no upgrade mechanism in v1 per PRD §4).
+```shell
+$ forge test
+```
+
+### Format
+
+```shell
+$ forge fmt
+```
+
+### Gas Snapshots
+
+```shell
+$ forge snapshot
+```
+
+### Anvil
+
+```shell
+$ anvil
+```
+
+### Deploy
+
+```shell
+$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+
+### Cast
+
+```shell
+$ cast <subcommand>
+```
+
+### Help
+
+```shell
+$ forge --help
+$ anvil --help
+$ cast --help
+```
