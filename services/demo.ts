@@ -1,4 +1,6 @@
-import { configEscrow, configParametric, configTranche } from "./configs.ts";
+import { configEscrow } from "./config-escrow.ts";
+import { configParametric } from "./config-parametric.ts";
+import { configTranche } from "./config-tranche.ts";
 
 const COV = process.env.COV_ADDRESS ?? "(unset)";
 

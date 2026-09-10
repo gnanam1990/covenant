@@ -30,7 +30,7 @@ function createCovenant(
   uint64 expiry
 ) external returns (uint256 id);
 
-function postCondition(uint256 id, uint256 conditionIndex) external;
+function postCondition(uint256 id, uint256 conditionIndex, bool value) external;
 function attemptRelease(uint256 id) external;
 function refundExpired(uint256 id) external;
 ```
@@ -43,7 +43,8 @@ Release rules:
 
 Notes:
 
-- `postCondition` — only the registered attestor for that `conditionIndex` may call.
+- `postCondition` — only the registered attestor for that `conditionIndex` may call, at most once per covenant (`hasConfirmed` is read before any state change, so one address can never double-count via N slots). `value` is the outcome vote: `true` counts toward the release rule, `false` is recorded but never releases.
+- `createCovenant` — rejects payer/payee as attestor and duplicate attestors (distinct-attestor enforcement; stricter than PROMPT invariant 1's "unless explicitly configured" allowance — no configuration path re-enables self-attestation in v1).
 - `attemptRelease` — permissionless; reverts unless the rule is currently satisfied. Pays the registered `payee` only.
 - `refundExpired` — only `payer`, only after `expiry`. Refunds the `payer` only.
 - Each covenant resolves exactly once (`Released` or `Refunded`).
@@ -52,9 +53,11 @@ Notes:
 
 | # | Config | Rule | Attestors | Function |
 |---|--------|------|-----------|----------|
-| 1 | Simple two-party escrow | `ALL` | 1 | `configEscrow()` in `services/configs.ts` |
-| 2 | Parametric insurance (one oracle) | `ANY` | 1 oracle | `configParametric()` |
-| 3 | Multi-attestor tranche | `M_OF_N` (2-of-3) | 3 | `configTranche()` |
+| 1 | Simple two-party escrow | `ALL` | 1 | `configEscrow()` in `services/config-escrow.ts` |
+| 2 | Parametric insurance (one oracle) | `ANY` | 1 oracle | `configParametric()` in `services/config-parametric.ts` |
+| 3 | Multi-attestor tranche | `M_OF_N` (2-of-3) | 3 | `configTranche()` in `services/config-tranche.ts` |
+
+Shared wiring (single `COV_ADDRESS`, `PAYEE_ADDRESS` payee, `CovenantCreated`-log receipt parsing) lives in `services/shared.ts`; `services/configs.ts` is a deprecated re-export shim.
 
 All three run against the **same** `COV_ADDRESS`. `services/demo.ts` runs all three and prints that shared address.
 
@@ -65,13 +68,13 @@ forge build
 forge test
 ```
 
-Expected: `12/12 PASS` (incl. 512-run generality fuzz over attestor count 1–6 + rule ALL/ANY/M-of-N + threshold).
+Expected: `17/17 PASS` (12 invariant + 5 sybil/value tests, incl. 512-run generality fuzz over attestor count 1–6 + rule ALL/ANY/M-of-N + threshold).
 
 ```bash
 npm test
 ```
 
-Off-chain config tests (`services/test/configs.test.ts`): same-address + rule-encoding checks, no network.
+Off-chain config tests (`services/test/configs.test.ts`, 5 tests): same-address + distinct-rules + env-payee + `CovenantCreated`-log parsing checks, no network.
 
 ### Env + deploy + demo (Arc testnet)
 
@@ -94,8 +97,10 @@ See `docs/addresses.md` for deployment log, fork validation, and lifecycle proof
 ## Repo layout
 
 - `src/Covenant.sol` — core primitive.
-- `test/Covenant.t.sol` — 12 invariant + fuzz tests.
-- `services/configs.ts` — three reference configs.
+- `test/Covenant.t.sol` — 17 invariant + fuzz + sybil tests.
+- `services/shared.ts` — shared RPC/ABI/receipt-parsing wiring (single `COV_ADDRESS`).
+- `services/config-escrow.ts`, `services/config-parametric.ts`, `services/config-tranche.ts` — three reference configs.
+- `services/configs.ts` — deprecated re-export shim.
 - `services/demo.ts` — CLI demo (`all|1|2|3`).
 - `script/Deploy.s.sol` — deploy script (`PRIVATE_KEY`, `USDC_ADDRESS` from env).
 - `docs/addresses.md` — addresses + lifecycle proof.

@@ -70,7 +70,7 @@ contract CovenantTest is Test {
         uint256 id = _createSimple();
         vm.prank(attacker);
         vm.expectRevert(Covenant.NotAttestor.selector);
-        cov.postCondition(id, 0);
+        cov.postCondition(id, 0, true);
     }
 
     function test_invariant1_attackerCannotForceRelease() public {
@@ -83,7 +83,7 @@ contract CovenantTest is Test {
 
     function test_invariant1_simpleEscrow_releaseAfterAttest() public {
         uint256 id = _createSimple();
-        vm.prank(a1); cov.postCondition(id, 0);
+        vm.prank(a1); cov.postCondition(id, 0, true);
         uint256 payeeBefore = usdc.balanceOf(payee);
         cov.attemptRelease(id);
         assertEq(usdc.balanceOf(payee), payeeBefore + 50_000_000);
@@ -108,7 +108,7 @@ contract CovenantTest is Test {
 
     function test_invariant3_doubleRelease_reverts() public {
         uint256 id = _createSimple();
-        vm.prank(a1); cov.postCondition(id, 0);
+        vm.prank(a1); cov.postCondition(id, 0, true);
         cov.attemptRelease(id);
         vm.expectRevert(Covenant.WrongState.selector);
         cov.attemptRelease(id);
@@ -120,27 +120,77 @@ contract CovenantTest is Test {
 
     function test_invariant4_sameAttestorOnlyOnce() public {
         uint256 id = _createMOFN();
-        vm.prank(a1); cov.postCondition(id, 0);
+        vm.prank(a1); cov.postCondition(id, 0, true);
         // a1 has only one condition (index 0). Can't double-count: re-posting reverts.
         vm.prank(a1);
         vm.expectRevert(Covenant.AlreadyConfirmed.selector);
-        cov.postCondition(id, 0);
+        cov.postCondition(id, 0, true);
     }
 
     function test_invariant4_belowThreshold_doesNotRelease() public {
         uint256 id = _createMOFN();
-        vm.prank(a1); cov.postCondition(id, 0);
+        vm.prank(a1); cov.postCondition(id, 0, true);
         vm.expectRevert(Covenant.InvalidRule.selector);
         cov.attemptRelease(id);
     }
 
     function test_invariant4_meetingThreshold_releases() public {
         uint256 id = _createMOFN();
-        vm.prank(a1); cov.postCondition(id, 0);
-        vm.prank(a2); cov.postCondition(id, 1);
+        vm.prank(a1); cov.postCondition(id, 0, true);
+        vm.prank(a2); cov.postCondition(id, 1, true);
         uint256 payeeBefore = usdc.balanceOf(payee);
         cov.attemptRelease(id);
         assertEq(usdc.balanceOf(payee), payeeBefore + 50_000_000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sybil resistance: distinct attestors, no party-as-attestor, no double-count
+    // -----------------------------------------------------------------------
+
+    function test_create_reverts_payerAsAttestor() public {
+        address[] memory atts = new address[](1);
+        atts[0] = payer;
+        vm.prank(payer);
+        vm.expectRevert(Covenant.AttestorIsParty.selector);
+        cov.createCovenant(payee, atts, Covenant.ReleaseRule.ALL, 1, 100, uint64(block.timestamp + 1 days));
+    }
+
+    function test_create_reverts_payeeAsAttestor() public {
+        address[] memory atts = new address[](1);
+        atts[0] = payee;
+        vm.prank(payer);
+        vm.expectRevert(Covenant.AttestorIsParty.selector);
+        cov.createCovenant(payee, atts, Covenant.ReleaseRule.ALL, 1, 100, uint64(block.timestamp + 1 days));
+    }
+
+    function test_create_reverts_duplicateAttestor() public {
+        address[] memory atts = new address[](3);
+        atts[0] = a1; atts[1] = a2; atts[2] = a1;
+        vm.prank(payer);
+        vm.expectRevert(Covenant.DuplicateAttestor.selector);
+        cov.createCovenant(payee, atts, Covenant.ReleaseRule.M_OF_N, 2, 100, uint64(block.timestamp + 1 days));
+    }
+
+    function test_sybil_crossSlotReplay_reverts() public {
+        uint256 id = _createMOFN();
+        vm.prank(a1); cov.postCondition(id, 0, true);
+        // a1 attempts to double-count via a2's slot: the hasConfirmed guard
+        // fires before the role check, so this reverts as a replay.
+        vm.prank(a1);
+        vm.expectRevert(Covenant.AlreadyConfirmed.selector);
+        cov.postCondition(id, 1, true);
+        // One distinct attestor is below the 2-of-3 threshold: still locked.
+        vm.expectRevert(Covenant.InvalidRule.selector);
+        cov.attemptRelease(id);
+    }
+
+    function test_valueFalse_doesNotSatisfyRule() public {
+        uint256 id = _createSimple();
+        vm.prank(a1); cov.postCondition(id, 0, false);
+        uint256 payeeBefore = usdc.balanceOf(payee);
+        vm.expectRevert(Covenant.InvalidRule.selector);
+        cov.attemptRelease(id);
+        assertEq(usdc.balanceOf(payee), payeeBefore, "false outcome must not release");
     }
 
     // -----------------------------------------------------------------------
@@ -171,7 +221,7 @@ contract CovenantTest is Test {
         for (uint256 i = 0; i < numAttestors; i++) {
             if (uint256(keccak256(abi.encode(id, i))) % 2 == 0) {
                 vm.prank(atts[i]);
-                try cov.postCondition(id, i) {} catch {}
+                try cov.postCondition(id, i, true) {} catch {}
             }
         }
 

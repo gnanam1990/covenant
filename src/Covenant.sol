@@ -24,6 +24,19 @@ library SafeTransferLib {
 ///   - releaseRule: ALL, ANY, or M-of-N
 ///   - amount + expiry
 ///
+/// DESIGN NOTE (bool-only value): `postCondition` takes a `bool value` — the
+/// attestor's outcome vote for their slot. Only a `true` outcome counts toward
+/// the release rule; a `false` vote is recorded (proof the attestor spoke) but
+/// never releases funds. A richer value type (threshold/comparator per PRD §2)
+/// is deliberately deferred: binary outcomes already express escrow,
+/// parametric-trigger, and tranche shapes, and an unused generic payload
+/// would widen the audit surface for no MVP gain.
+///
+/// SYBIL RESISTANCE: attestors must be distinct from each other and from the
+/// payer/payee (enforced at create). At posting time `hasConfirmed[id][who]`
+/// is read before any state change, so one address can confirm at most once
+/// per covenant even if it somehow held N slots.
+///
 /// Generic enough to express: simple escrow, parametric trigger, multi-attestor
 /// tranche release, tiered-outcome payment — through configuration alone.
 contract Covenant {
@@ -34,9 +47,12 @@ contract Covenant {
     enum CovenantState { Active, Released, Refunded }
 
     /// A condition is "attestor X has confirmed (with a bool outcome)".
+    /// `confirmed` records that the attestor spoke; `outcome` is their vote.
+    /// Only `confirmed && outcome` counts toward the release rule.
     struct Condition {
         address attestor;
         bool    confirmed;
+        bool    outcome;
     }
 
     struct CovenantData {
@@ -73,6 +89,8 @@ contract Covenant {
     error AlreadyConfirmed();
     error InvalidRule();
     error ExpiryNotReached();
+    error AttestorIsParty();
+    error DuplicateAttestor();
 
     constructor(IERC20 _usdc) {
         if (address(_usdc) == address(0)) revert ZeroAddress();
@@ -103,22 +121,34 @@ contract Covenant {
         c.threshold = threshold;
         for (uint256 i = 0; i < attestors.length; i++) {
             if (attestors[i] == address(0)) revert ZeroAddress();
-            c.conditions.push(Condition({attestor: attestors[i], confirmed: false}));
+            if (attestors[i] == msg.sender || attestors[i] == payee) revert AttestorIsParty();
+            for (uint256 j = 0; j < i; j++) {
+                if (attestors[i] == attestors[j]) revert DuplicateAttestor();
+            }
+            c.conditions.push(Condition({attestor: attestors[i], confirmed: false, outcome: false}));
         }
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         emit CovenantCreated(id, msg.sender, payee, amount, uint8(rule), threshold, expiry);
     }
 
-    /// @notice Registered attestor for conditionIndex posts a confirmation.
-    function postCondition(uint256 id, uint256 conditionIndex) external {
+    /// @notice Registered attestor for conditionIndex posts their outcome vote.
+    /// @param value The attestor's outcome: true counts toward release, false is
+    ///        recorded but never releases (lets an attestor go on record as "no"
+    ///        without moving funds).
+    function postCondition(uint256 id, uint256 conditionIndex, bool value) external {
         CovenantData storage c = _active(id);
         if (conditionIndex >= c.conditions.length) revert InvalidConditions();
+        // Sybil guard FIRST: one address confirms at most once per covenant,
+        // even across slots. Checked before role so a cross-slot replay reverts
+        // as AlreadyConfirmed (double-count attempt), not NotAttestor.
+        if (hasConfirmed[id][msg.sender]) revert AlreadyConfirmed();
         Condition storage cond = c.conditions[conditionIndex];
         if (msg.sender != cond.attestor) revert NotAttestor();
         if (cond.confirmed) revert AlreadyConfirmed();
 
         cond.confirmed = true;
+        cond.outcome = value;
         hasConfirmed[id][msg.sender] = true;
         emit ConditionPosted(id, conditionIndex, msg.sender);
     }
@@ -176,7 +206,7 @@ contract Covenant {
     function _ruleSatisfied(CovenantData storage c) internal view returns (bool) {
         uint256 confirmed = 0;
         for (uint256 i = 0; i < c.conditions.length; i++) {
-            if (c.conditions[i].confirmed) confirmed++;
+            if (c.conditions[i].confirmed && c.conditions[i].outcome) confirmed++;
         }
         if (c.rule == ReleaseRule.ALL) return confirmed == c.conditions.length;
         if (c.rule == ReleaseRule.ANY) return confirmed > 0;

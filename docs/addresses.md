@@ -23,13 +23,13 @@ Real testnet deploy from this repo is pending a deployer key funded with testnet
 - **Tool**: `forge script script/Deploy.s.sol:Deploy --rpc-url $ARC_TESTNET_RPC --broadcast`
 - **Run log**: `broadcast/Deploy.s.sol/5042002/run-latest.json`
 
-The three reference configurations from PRD §5 are scripted in `services/configs.ts` (run via `services/demo.ts`) — ready to run against real Arc testnet with a funded key. **The point of this project is that all three run against the SAME deployed address** — see the demo output which prints that address at the end.
+The three reference configurations from PRD §5 are scripted in `services/config-escrow.ts`, `services/config-parametric.ts`, and `services/config-tranche.ts` over shared wiring in `services/shared.ts` (run via `services/demo.ts`) — ready to run against real Arc testnet with a funded key. **The point of this project is that all three run against the SAME deployed address** — see the demo output which prints that address at the end.
 
 ## How to run on real Arc testnet
 
 ```bash
 cp .env.example .env
-# fill in PRIVATE_KEY, PAYER_KEY, ORACLE_KEY, ATTESTOR1_KEY, ATTESTOR2_KEY, ATTESTOR3_KEY, USDC_ADDRESS
+# fill in PRIVATE_KEY, PAYER_KEY, ORACLE_KEY, ATTESTOR1_KEY, ATTESTOR2_KEY, ATTESTOR3_KEY, PAYEE_ADDRESS, USDC_ADDRESS
 source .env
 forge script script/Deploy.s.sol:Deploy --rpc-url $ARC_TESTNET_RPC --broadcast
 COV_ADDRESS=0x... npm run demo
@@ -39,8 +39,8 @@ COV_ADDRESS=0x... npm run demo
 
 | Metric | Value |
 |--------|-------|
-| Foundry tests | 12 / 12 passing (incl. 512-run generality fuzz) |
-| Off-chain unit tests | 2 / 2 passing |
+| Foundry tests | 17 / 17 passing (12 invariants + 5 sybil/value tests, incl. 512-run generality fuzz) |
+| Off-chain unit tests | 5 / 5 passing |
 | Invariants encoded | 5 / 5 from PROMPT.md |
 | Generality fuzz | randomizes attestor count (1-6) + rule (ALL/ANY/M-of-N) + threshold |
 | Real testnet deploy | pending funded key |
