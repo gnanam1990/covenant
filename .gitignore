@@ -1,4 +1,12 @@
-out/ cache/ broadcast/ lib/forge-std/
-node_modules/ dist/ coverage/
-.env !.env.example
-.vscode/ .idea/ .DS_Store
+out/
+cache/
+broadcast/
+lib/forge-std/
+node_modules/
+dist/
+coverage/
+.env
+!.env.example
+.vscode/
+.idea/
+.DS_Store
